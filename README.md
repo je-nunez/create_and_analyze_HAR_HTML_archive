@@ -29,11 +29,28 @@ besides the URLs themselves:
                         "size": 7163
                     }
 
+This program will create two output files, a `.har` file with the `HAR`
+HTML archive, and a `.prof` with a report of some basic profiling taken
+from the `HAR` file, like (for `http://www.cnn.com`)
+
+     URL: http://data.cnn.com/jsonp/breaking_news/domestic.json?callback=<...>
+        Response status: 200
+        Response size: 169
+        Response type: application/javascript
+        startedDateTime: 2015-09-10T21:14:50.836-04:00
+        timings['receive']: 2541
+        timings['send']: 0
+        timings['ssl']: -1
+        timings['connect']: 3
+        timings['dns']: 4
+        timings['blocked']: 0
+        timings['wait']: 69
+
 For more information about `HAR` archives:
 
-   https://en.wikipedia.org/wiki/.har
+ https://en.wikipedia.org/wiki/.har
    
-   https://dvcs.w3.org/hg/webperf/raw-file/tip/specs/HAR/Overview.html
+ https://dvcs.w3.org/hg/webperf/raw-file/tip/specs/HAR/Overview.html
 
 # WIP
 
@@ -45,7 +62,7 @@ subject to change. The documentation can be inaccurate.
 The Python module for the `Selenium Web Browser` automation, like,
 e.g., by:
 
-   conda install --channel https://conda.anaconda.org/chen selenium
+    conda install --channel https://conda.anaconda.org/chen selenium
 
 The `BrowserMob Proxy` is also necessary, since it caches all the
 HAR information about the webpage:
@@ -58,8 +75,17 @@ and the Python module for the `BrowserMob Proxy`:
 
     ( https://browsermob-proxy-py.readthedocs.org/en/latest/ )
 
-Besides this, the `BrowserMob Proxy` binary needs to be running:
+For the Selenium `chromedriver` web-driver, you need to install:
 
-    <path-to>/bin/browsermob-proxy
+  In Mac OS:
+       brew install chromedriver
 
+Or download the `chromedriver` web-driver directly from:
+
+    http://chromedriver.storage.googleapis.com/index.html
+
+(according to its latest release in:
+
+    http://chromedriver.storage.googleapis.com/LATEST_RELEASE
+)
 
