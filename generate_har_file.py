@@ -55,7 +55,8 @@ def check_selenium_webdriver(selenium_web_driver):
     """Check if the given 'selenium_web_driver' string is a valid
     Selenium web-driver we recognize."""
 
-    return selenium_web_driver in ["Chrome", "Firefox", "Ie"]
+    return selenium_web_driver in ["chrome", "firefox", "phantomjs",
+                                   "safari", "ie"]
 
 
 def create_selenium_webdriver(selenium_web_driver, browsermob_proxy):
@@ -64,7 +65,7 @@ def create_selenium_webdriver(selenium_web_driver, browsermob_proxy):
 
     driver = None
 
-    if selenium_web_driver == "Chrome":
+    if selenium_web_driver == "chrome":
         chromedriver = "<PUT-HERE-PATH-TO>/bin/chromedriver"
         os.environ["webdriver.chrome.driver"] = chromedriver
 
@@ -104,7 +105,7 @@ def create_selenium_webdriver(selenium_web_driver, browsermob_proxy):
         driver = webdriver.Chrome(desired_capabilities=chrome_desired_caps,
                                   chrome_options=null_chrome_options)
 
-    elif selenium_web_driver == "Firefox":
+    elif selenium_web_driver == "firefox":
         # see the ./py/selenium/webdriver/firefox/webdriver_prefs.json in the
         # Selenium Python bindings for the frozen and mutable preferences of
         # the Firefox webdriver in Selenium
@@ -114,7 +115,77 @@ def create_selenium_webdriver(selenium_web_driver, browsermob_proxy):
         profile.set_proxy(browsermob_proxy.selenium_proxy())
         driver = webdriver.Firefox(firefox_profile=profile)
 
-    elif selenium_web_driver == "Ie":
+    elif selenium_web_driver == "phantomjs":
+
+        # pylint: disable=line-too-long
+        phantomjs_exec_path = '<PUT-HERE-PATH-TO>/bin/phantomjs'
+
+        # options to PhantomJS: see http://phantomjs.org/api/command-line.html
+        phantomjs_proxy = browsermob_proxy.proxy
+        proxy_address = "--proxy={0}".format(phantomjs_proxy)
+        phantomjs_args = [proxy_address, '--proxy-type=http',
+                          '--ignore-ssl-errors=yes']
+        driver = webdriver.PhantomJS(executable_path=phantomjs_exec_path,
+                                     service_args=phantomjs_args)
+        driver.set_window_size(1366, 768)
+
+    elif selenium_web_driver == "safari":
+        # To install the Selenium web-driver for Safari, follow instructions
+        # here, otherwise Selenium would time-out trying to connect to Safari:
+        #
+        #    https://code.google.com/p/selenium/issues/detail?id=7933#c33
+        #
+        # pylint: disable=line-too-long
+        # (see http://central.maven.org/maven2/org/seleniumhq/selenium/selenium-safari-driver/)
+        #
+        # The Selenium Safari driver needs this environment variable,
+        # according to its source code:
+        #    ./selenium/webdriver/safari/webdriver.py
+        #
+        # 52  try:
+        # 53      executable_path = os.environ["SELENIUM_SERVER_JAR"]
+        # 54  except:
+        # 55      raise Exception("No executable path given, please add one to Environment Variable \
+        # 56      'SELENIUM_SERVER_JAR'")
+        #
+        # pylint: disable=line-too-long
+        os.environ['SELENIUM_SERVER_JAR'] = '<PUT-HERE-PATH-TO>/bin/selenium-server-standalone-2.47.1.jar'
+        safari_proxy = browsermob_proxy.proxy
+        #
+        # See: https://code.google.com/p/selenium/wiki/DesiredCapabilities
+        # and also
+        #
+        #      selenium/java/server/src/org/openqa/selenium/server/browserlaunchers/SafariCustomProfileLauncher.java
+        #
+        # where, to set a proxy for Safari, they need to change the System
+        # Proxy (see method " private void setupSystemProxy() { ... }"
+        #
+
+        safari_desired_caps = {
+            "browserName": "safari",
+            "version": "",
+            "platform": "ANY",
+            "javascriptEnabled": True,
+            "acceptSslCerts": True,
+            "proxy": {
+                "httpProxy": safari_proxy,
+                "ftpProxy": None,
+                "sslProxy": None,
+                "noProxy": None,
+                "proxyType": "MANUAL",
+                "autodetect": False
+                },
+            "honorSystemProxy": False,
+            "safari.options": {
+                "mode": "proxy",
+                "honorSystemProxy": False
+                }
+            }
+        quiet_flag = True
+        driver = webdriver.Safari(desired_capabilities=safari_desired_caps,
+                                  quiet=quiet_flag)
+
+    elif selenium_web_driver == "ie":
         profile = webdriver.IeProfile()
         profile.set_proxy(browsermob_proxy.selenium_proxy())
         driver = webdriver.Ie(ie_profile=profile)
@@ -136,95 +207,121 @@ def get_a_random_free_tcp_port():
     return port_allocated
 
 
+def get_dict_keys(an_obj, expected_path_keys, warn_if_missing):
+    """Returns the value of the
+
+          an_obj[K1][K2]...[Kn]
+
+    if and only if the object 'an_obj' is a dictionary and has that sequence
+    of keys, where
+
+          Ki
+
+    is the i-th position in the parameter list 'expected_path_keys'.
+
+    If such sequence of keys
+
+          an_obj[K1][K2]...[Kn]
+
+    is not found, then returns None.
+
+    Optionally, warn to standard-error if the such sequence of keys
+          an_obj[K1][K2]...[Kn]
+    do not exist AND if requested to warn by the parameter 'warn_if_missing'.
+    """
+
+    current_node = an_obj
+    accumulated_transversal = []
+    for expected_key in expected_path_keys:
+        if not isinstance(current_node, dict):
+            if warn_if_missing:
+                logerr("Object found after keys {0} is not a dictionary.\n".
+                       format(accumulated_transversal))
+            return None
+        if expected_key not in current_node:
+            if warn_if_missing:
+                logerr("Key ['{0}'] not found after keys {1}.\n".
+                       format(expected_key, ','.join(accumulated_transversal)))
+            return None
+        accumulated_transversal.append(expected_key)
+        current_node = current_node[expected_key]
+
+    return current_node
+
+
 def report_har_entry(har_entry, profiling_rept_file):
     """Report the profiling information of a single HAR HTML archive entry,
     ie., only one component inside the whole HTML document, writing the
     report to a file."""
 
-    # This is a syntactic validator of a complex data structure (a HAR HTML
-    # archive, so it needs to validate many conditions, etc, so you will
-    # receive pylint complains on too-many-branches and
-    # too-many-return-statements
+    expected_dictionaries = ["request", "response"]
+    for expected_key in expected_dictionaries:
+        if not get_dict_keys(har_entry, [expected_key], True):
+            return
 
-    if not isinstance(har_entry, dict):
-        logerr("HAR-entry is not a dictionary.")
-        return
-    if "request" not in har_entry:
-        logerr("HAR-entry does not have a ['request'] key.")
-        return
-    if not isinstance(har_entry["request"], dict):
-        logerr("['request'] key in HAR-entry is not a dictionary.")
-        return
+    # Check if we have a MIME-filter on which MIME-types to report only
+    obj_mime = get_dict_keys(har_entry, ["response", "content", "mimeType"],
+                             False)
+
+    if Config.mime_type_pattern and not \
+       Config.mime_type_pattern.search(obj_mime):
+        # the URL MIME-type 'obj_mime' does not match requested MIME pattern
+        return     # do not report on this component HAR entry
 
     # Report the URL requested
-    if "url" not in har_entry["request"]:
-        logerr("The ['request'] sub-tree in HAR-entry does not have an "
-               "'url' key.")
-        return
-    profiling_rept_file.write("URL: " + har_entry["request"]["url"] + "\n")
+    url = get_dict_keys(har_entry, ["request", "url"], True)
+    if not url:
+        return  # the key har_entry["request"]["url"] was not found
+    profiling_rept_file.write("URL: {0}\n".format(url))
 
     # Report different fields of the server response to this HTTP request
-    if "response" not in har_entry:
-        logerr("HAR-entry does not have a ['response'] key.")
-        return
-    if not isinstance(har_entry["response"], dict):
-        logerr("['response'] key in HAR-entry is not a dictionary.")
-        return
-    if "status" in har_entry["response"]:
-        profiling_rept_file.write("   Response status: " +
-                                  str(har_entry["response"]["status"]) + "\n")
-    if "content" in har_entry["response"] and \
-       isinstance(har_entry["response"]["content"], dict):
-        if "size" in har_entry["response"]["content"]:
-            obj_size = str(har_entry["response"]["content"]["size"])
-            profiling_rept_file.write("   Response size: " + obj_size + "\n")
-        if "mimeType" in har_entry["response"]["content"]:
-            obj_mime = har_entry["response"]["content"]["mimeType"]
-            profiling_rept_file.write("   Response type: " + obj_mime + "\n")
+    status = get_dict_keys(har_entry, ["response", "status"], False)
+    if status:
+        profiling_rept_file.write("   Response status: {0:d}\n".
+                                  format(status))
+
+    obj_size = get_dict_keys(har_entry, ["response", "content", "size"],
+                             False)
+    if obj_size:
+        profiling_rept_file.write("   Response size: {0:d}\n".format(obj_size))
+    if obj_mime:
+        profiling_rept_file.write("   Response type: {0}\n".format(obj_mime))
 
     # Report the start date when this HTTP request was submitted
-    if "startedDateTime" in har_entry:
-        profiling_rept_file.write("   startedDateTime: " +
-                                  har_entry["startedDateTime"] + "\n")
+    started_time = get_dict_keys(har_entry, ["startedDateTime"], False)
+    if started_time:
+        profiling_rept_file.write("   startedDateTime: {0}\n".
+                                  format(started_time))
 
     # Report the different timings of this HTTP request
-    if "timings" not in har_entry:
-        logerr("HAR-entry does not have a ['timings'] key.")
+    if not get_dict_keys(har_entry, ["timings"], True):
         return
-    if not isinstance(har_entry["timings"], dict):
-        logerr("['timings'] key in HAR-entry is not a dictionary.")
-        return
+
     timings_std_keys = ["receive", "send", "ssl", "connect",
                         "dns", "blocked", "wait"]
     for timing_key in timings_std_keys:
-        if timing_key in har_entry["timings"]:
-            # Get the timing profiling for this key 'timing_key'
-            timing_profiling = str(har_entry["timings"][timing_key])
-            profiling_rept_file.write("   timings['" +
-                                      timing_key + "']: " +
-                                      timing_profiling + "\n")
+        profiling_time = get_dict_keys(har_entry, ["timings", timing_key],
+                                       False)
+        if profiling_time and isinstance(profiling_time, (int, long)) and \
+           profiling_time >= Config.min_precision_delays:
+            profiling_rept_file.write("   timings['{0}']: {1:d}\n".
+                                      format(timing_key, profiling_time))
 
 
 def report_har_dictionary(har_dict, profiling_rept_file):
     """Report a profiling information of a HAR HTML archive dictionary
     to a file-object."""
 
-    if not isinstance(har_dict, dict):
-        logerr("HAR-tree is not a dictionary.")
-        return
-    if "log" not in har_dict:
-        logerr("'log' key not in HAR HTML archive.")
-        return
-    if "entries" not in har_dict["log"]:
-        logerr("'entries' key not in ['log] sub-tree of the HAR "
-               "HTML archive.")
-        return
-    if not isinstance(har_dict["log"]["entries"], list):
+    list_entries = get_dict_keys(har_dict, ["log", "entries"], True)
+    if not list_entries:
         logerr("['log']['entries'] sub-tree in the HAR HTML archive is "
-               "not a list.")
-        return
-    for entry in har_dict["log"]["entries"]:
-        report_har_entry(entry, profiling_rept_file)
+               "not found.\n")
+    elif not isinstance(list_entries, list):
+        logerr("['log']['entries'] sub-tree in the HAR HTML archive is "
+               "not a list.\n")
+    else:
+        for entry in list_entries:
+            report_har_entry(entry, profiling_rept_file)
 
 
 def save_web_page_stats_to_har(url, webdriver_name, save_to_file):
@@ -267,6 +364,24 @@ def logerr(err_msg):
     sys.stderr.write(err_msg)
 
 
+#
+# class Config(object):
+#
+# A (static) class to hold global config settings, instead of passing these
+# global config up through all the levels of the functions call-stack
+
+class Config(object):              # pylint: disable=too-few-public-methods
+    """This class holds global config settings."""
+
+    # Minimum precision of delay to report (ie., only delays in the HAR HTML
+    # archive greater than this will be reported)
+    min_precision_delays = -10000000
+
+    # Report only those URLs whose MIME-types match this regular expression
+    # pattern
+    mime_type_pattern = None
+
+
 def main():
     """Main program."""
 
@@ -280,7 +395,7 @@ def main():
     pyscript_docstring = pyscript_metadata.__doc__
 
     # The ArgParser
-    parser = argparse.ArgumentParser(description='Generate a HAR archive'
+    parser = argparse.ArgumentParser(description='Generate a HAR HTML archive'
                                                  'for an URL.',
                                      epilog=pyscript_docstring,
                                      formatter_class=\
@@ -289,6 +404,20 @@ def main():
                         required=False, metavar='web-driver',
                         help='Specify which Selenium web-driver to use to '
                              'load URL. (default: %(default)s)')
+    parser.add_argument('-n', '--non_zero', default=False, required=False,
+                        action='store_true',
+                        help='Only report real delays (ie., omit those delays'
+                             ' that are zero or do not apply (are -1). '
+                             '(default: %(default)s)')
+    parser.add_argument('-m', '--min_precision', nargs=1, default=-10000,
+                        required=False, type=int, metavar='PRECISION',
+                        help='Specify the minimum precision of delay (in '
+                             'milliseconds) up from this value to report '
+                             'delays. (default: report all delays)')
+    parser.add_argument('-t', '--type_pattern', nargs=1, default=None,
+                        required=False, metavar='MIME-TYPE-PATTERN',
+                        help='Report only those URLs whose MIME-types match '
+                             'this regular expression. (default: all)')
     parser.add_argument('urls', metavar='URL', nargs='+',
                         default='http://www.cnn.com/',
                         help='The list of the URLs to measure into HAR '
@@ -305,10 +434,34 @@ def main():
             # normal case for argparse.ArgumentParser() in Linux
             selenium_web_driver = args.web_driver
 
+    selenium_web_driver = selenium_web_driver.lower()
     if not check_selenium_webdriver(selenium_web_driver):
-        logerr("Selenium webdriver '" + selenium_web_driver +
-               "' not supported yet.")
+        logerr("Selenium webdriver '{0}' not supported yet.\n".
+               format(selenium_web_driver))
         sys.exit(1)
+
+    if args.non_zero:
+        Config.min_precision_delays = 1
+
+    if args.min_precision:
+        if isinstance(args.min_precision, list):
+            # this type check is necessary for some argparse.ArgumentParser()
+            # installed in Mac OS/X
+            Config.min_precision_delays = int(args.min_precision[0])
+        else:
+            # normal case for argparse.ArgumentParser() in Linux
+            Config.min_precision_delays = int(args.min_precision)
+        # check if both options '--non_zero' and '--min_precision' are given,
+        # since they are implemented very similarly
+        if args.non_zero and Config.min_precision_delays < 1:
+            Config.min_precision_delays = 1
+
+    if args.type_pattern:
+        # MIME types are case insensitive. They are lowercase by convention
+        # only. RFC 2045 says: "The type, subtype, and parameter names are
+        # not case sensitive."
+        Config.mime_type_pattern = re.compile(args.type_pattern[0],
+                                              re.IGNORECASE)
 
     for url in args.urls:
         destination_file = re.sub('[^0-9a-zA-Z]+', '_', url)
