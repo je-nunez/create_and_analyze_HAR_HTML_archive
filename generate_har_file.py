@@ -14,9 +14,11 @@ import inspect
 import io
 import re
 import socket
+import ConfigParser
 from browsermobproxy import Server
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
+
 
 
 # pylint: disable=too-few-public-methods
@@ -51,14 +53,6 @@ class NullChromeOptions(ChromeOptions):
         return {}
 
 
-def check_selenium_webdriver(selenium_web_driver):
-    """Check if the given 'selenium_web_driver' string is a valid
-    Selenium web-driver we recognize."""
-
-    return selenium_web_driver in ["chrome", "firefox", "phantomjs",
-                                   "safari", "ie"]
-
-
 def create_selenium_webdriver(selenium_web_driver, browsermob_proxy):
     """Create the Selenium web-driver requested, associated to the
     the browsermob_proxy given."""
@@ -66,7 +60,7 @@ def create_selenium_webdriver(selenium_web_driver, browsermob_proxy):
     driver = None
 
     if selenium_web_driver == "chrome":
-        chromedriver = "<PUT-HERE-PATH-TO>/bin/chromedriver"
+        chromedriver = Config.chromedriver_path
         os.environ["webdriver.chrome.driver"] = chromedriver
 
         chrome_proxy = browsermob_proxy.proxy
@@ -117,8 +111,7 @@ def create_selenium_webdriver(selenium_web_driver, browsermob_proxy):
 
     elif selenium_web_driver == "phantomjs":
 
-        # pylint: disable=line-too-long
-        phantomjs_exec_path = '<PUT-HERE-PATH-TO>/bin/phantomjs'
+        phantomjs_exec_path = Config.phantomjs_exec_path
 
         # options to PhantomJS: see http://phantomjs.org/api/command-line.html
         phantomjs_proxy = browsermob_proxy.proxy
@@ -149,7 +142,7 @@ def create_selenium_webdriver(selenium_web_driver, browsermob_proxy):
         # 56      'SELENIUM_SERVER_JAR'")
         #
         # pylint: disable=line-too-long
-        os.environ['SELENIUM_SERVER_JAR'] = '<PUT-HERE-PATH-TO>/bin/selenium-server-standalone-2.47.1.jar'
+        os.environ['SELENIUM_SERVER_JAR'] = Config.selenium_server_jar
         safari_proxy = browsermob_proxy.proxy
         #
         # See: https://code.google.com/p/selenium/wiki/DesiredCapabilities
@@ -328,9 +321,7 @@ def save_web_page_stats_to_har(url, webdriver_name, save_to_file):
     """Generate the HAR archive from an URL with the Selenium webdriver
     'webdriver_name', saving the HAR file to 'save_to_file'
     """
-    # pylint: disable=line-too-long
-    browsermob_executable = "<PUT-HERE-PATH-TO>/bin/browsermob-proxy"
-    browsermob_server = Server(browsermob_executable)
+    browsermob_server = Server(Config.browsermob_executable)
     browsermob_server.start()
     random_port = get_a_random_free_tcp_port()
     proxy_conn = browsermob_server.create_proxy({"port": random_port})
@@ -370,8 +361,19 @@ def logerr(err_msg):
 # A (static) class to hold global config settings, instead of passing these
 # global config up through all the levels of the functions call-stack
 
+class InvalidFilePathException(Exception):
+    """A dummy class to represent a custom InvalidFilePathException because a
+    filepath given in the config file doesn't exist or is otherwise invalid.
+    """
+    pass
+
+
 class Config(object):              # pylint: disable=too-few-public-methods
     """This class holds global config settings."""
+
+    # Generic filename of the config file (location is defined as $HOME dir
+    # in read_config_file() below)
+    config_file = ".generate_har_file.conf"
 
     # Minimum precision of delay to report (ie., only delays in the HAR HTML
     # archive greater than this will be reported)
@@ -381,9 +383,164 @@ class Config(object):              # pylint: disable=too-few-public-methods
     # pattern
     mime_type_pattern = None
 
+    # Paths to executables, to Selenium, and to Selenium webdrivers. See
+    # method 'read_config_file()' below to read these values from a config file
+    # pylint: disable=line-too-long
+    chromedriver_path = "<DEFINE-IN-CONFIG-FILE-PATH-TO>/bin/chromedriver"
+    phantomjs_exec_path = "<DEFINE-IN-CONFIG-FILE-PATH-TO>/bin/phantomjs"
+    selenium_server_jar = "<DEFINE-IN-CONFIG-FILE-PATH-TO>/bin/selenium-server-standalone-2.47.1.jar"
+    browsermob_executable = "<DEFINE-IN-CONFIG-FILE-PATH-TO>/bin/browsermob-proxy"
+
+
+    @classmethod
+    def select_config_file_to_read(cls):
+        """
+        Select which config file to read
+        """
+
+        # As the first attempt for a config file to use, we check for a
+        # readable (os.R_OK) config file in current directory
+
+        tentative_configf = os.path.join(os.getcwd(), cls.config_file)
+        error = cls.validate_filepath(tentative_configf, os.R_OK, False)
+
+        if not error:
+            cls.config_file = tentative_configf
+        else:
+            # fail-safe:
+            # a readable config file does not exist in current directory:
+            # as last resort, suppose it is in the $HOME directory (do not
+            # verify whether it exists or not -we could do so, using same
+            # function 'validate_filepath(...)')
+            cls.config_file = \
+                      os.path.join(os.path.expanduser('~'), cls.config_file)
+
+
+    @classmethod
+    def read_config_file(cls):
+        """
+        Read the configuration file 'Config.config_file' in the current
+        directory and load into the class-static fields in this class.
+        """
+        # Not all paths need to be defined, the paths that are needed depend
+        # on the Selenium webdriver to use. (The exception is the
+        # 'browsermob_executable' path, that is path to the BrowserMob Proxy
+        # executable itself
+        default_paths = {
+            'chromedriver_path': '',
+            'phantomjs_exec_path': '',
+            'selenium_server_jar': ''    # for the Selenium Safari webdriver
+        }
+
+        # Select the location of the config file to read
+        cls.select_config_file_to_read()
+
+        try:
+            config = ConfigParser.SafeConfigParser(default_paths)
+            config.read(cls.config_file)
+        except ConfigParser.MissingSectionHeaderError as exc:
+            exc_type, exc_value, dummy_callstack = sys.exc_info()
+            logerr('ERROR: Config file {0}: {1}: {2}\n'.format(cls.config_file,
+                                                               exc_type,
+                                                               exc_value))
+            raise exc
+
+        try:
+            cls.browsermob_executable = \
+                                  config.get('Paths', 'browsermob_executable')
+
+            config_path = config.get('Paths', 'chromedriver_path')
+            if config_path:
+                cls.chromedriver_path = config_path
+
+            config_path = config.get('Paths', 'phantomjs_exec_path')
+            if config_path:
+                cls.phantomjs_exec_path = config_path
+
+            config_path = config.get('Paths', 'selenium_server_jar')
+            if config_path:
+                cls.selenium_server_jar = config_path
+
+        except (ConfigParser.NoOptionError, ConfigParser.NoSectionError) as \
+               exc:
+            exc_type, exc_value, dummy_callstack = sys.exc_info()
+            logerr('ERROR: Config file {0}: {1}: {2}\n'.format(cls.config_file,
+                                                               exc_type,
+                                                               exc_value))
+            raise exc
+
+        # We do need to check, after reading the config file, that at least
+        # the BrowserMob Proxy executable does exist where it is indicated
+        # (the parameter 'True' means to raise an exception if it is not an
+        # executable file)
+        cls.validate_filepath(cls.browsermob_executable, os.X_OK, True)
+
+
+    @staticmethod
+    def validate_filepath(filepath, permissions, raise_exception):
+        """
+        Validate that the given parameter 'filepath' exists and has at least
+        permissions 'permissions'.
+
+        This method is defined as a 'staticmethod' inside this Config class as
+        it is the first version of it and is not used anywhere else in the
+        program.
+        """
+        error_msg = None
+        if not os.path.isfile(filepath):
+            error_msg = "ERROR: File '{0}' does not exist or is not a file\n".\
+                        format(filepath)
+        elif not os.access(filepath, permissions):
+            error_msg = "ERROR: File '{0}' misses proper permission '{1}'.\n".\
+                        format(filepath, permissions)
+
+        # Are we asked to raise an exception if there is an error?
+        if raise_exception and error_msg:
+            logerr(error_msg)
+            raise InvalidFilePathException(error_msg)
+        else:
+            # If we are not asked to 'raise_exception', then we return just
+            # the error message
+            return error_msg
+
+
+    @classmethod
+    def check_selenium_webdriver(cls, selenium_web_driver):
+        """Does a minimum check if the given 'selenium_web_driver' string is
+        a valid Selenium web-driver we recognize, and if our config paths are
+        set ok for it."""
+
+        issue = None
+        if selenium_web_driver == "chrome":
+            issue = cls.validate_filepath(cls.chromedriver_path, os.X_OK,
+                                          False)
+        elif selenium_web_driver == "firefox":
+            issue = None
+        elif selenium_web_driver == "phantomjs":
+            issue = cls.validate_filepath(cls.phantomjs_exec_path, os.X_OK,
+                                          False)
+        elif selenium_web_driver == "safari":
+            issue = cls.validate_filepath(cls.selenium_server_jar, os.R_OK,
+                                          False)
+        elif selenium_web_driver == "ie":
+            issue = "The Internet Explorer webdriver is not implemented yet.\n"
+        else:
+            issue = "Unknown webdriver '{0}'.\n".format(selenium_web_driver)
+
+        if issue:
+            # There was an issue checking: report it an return False
+            logerr("Checking Selenium webdriver for '{0}'...\n{1}".\
+                   format(selenium_web_driver, issue))
+            return False
+        else:
+            return True
+
 
 def main():
     """Main program."""
+
+    # Read default values (paths to Selenium, etc)
+    Config.read_config_file()
 
     # Get the usage string from the doc-string of this script
     # (ie. usage_string := doc_string )
@@ -435,9 +592,7 @@ def main():
             selenium_web_driver = args.web_driver
 
     selenium_web_driver = selenium_web_driver.lower()
-    if not check_selenium_webdriver(selenium_web_driver):
-        logerr("Selenium webdriver '{0}' not supported yet.\n".
-               format(selenium_web_driver))
+    if not Config.check_selenium_webdriver(selenium_web_driver):
         sys.exit(1)
 
     if args.non_zero:
