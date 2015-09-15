@@ -31,6 +31,23 @@ besides the URLs themselves:
                         "size": 7163
                     }
 
+For more information about `HAR` archives:
+
+ https://en.wikipedia.org/wiki/.har
+
+ https://dvcs.w3.org/hg/webperf/raw-file/tip/specs/HAR/Overview.html
+
+For the importance on timing, see, for example:
+
+ http://www.aosabook.org/en/posa/high-performance-networking-in-chrome.html
+
+# WIP
+
+This project is a *work in progress*. The implementation is *incomplete* and
+subject to change. The documentation can be inaccurate.
+
+# Usage example:
+
 This program will create two output files, a `.har` file with the `HAR`
 HTML archive, and a `.prof` with a report of some basic profiling taken
 from the `HAR` file, like (for `http://www.cnn.com` -values are in
@@ -49,26 +66,9 @@ milliseconds):
         timings['blocked']: 0
         timings['wait']: 69
 
-For more information about `HAR` archives:
-
- https://en.wikipedia.org/wiki/.har
-   
- https://dvcs.w3.org/hg/webperf/raw-file/tip/specs/HAR/Overview.html
-
-For the importance on timing, see, for example:
-
- http://www.aosabook.org/en/posa/high-performance-networking-in-chrome.html
-
-# WIP
-
-This project is a *work in progress*. The implementation is *incomplete* and
-subject to change. The documentation can be inaccurate.
-
-# Example usage:
-
 This invocation:
 
-   ./generate_har_file.py  -w chrome  -m 10  -t image/jpeg  https://www.flickr.com
+      ./generate_har_file.py  -w chrome  -m 10  -t image/jpeg  https://www.flickr.com
 
 will generate a HAR HTML archive for the URL `https://www.flickr.com`,
 and a .PROF summary profile with only those URLs which any timing
@@ -104,22 +104,26 @@ HAR information about the webpage:
 
 and the Python module for the `BrowserMob Proxy`:
 
-G    pip install browsermob-proxy
+     pip install browsermob-proxy
 
     ( https://browsermob-proxy-py.readthedocs.org/en/latest/ )
 
 The program allows to use several types of Selenium `webdrivers`: to
-use one webdriver, you don't the others installed. If you want to use
-the `PhantomJS` webdriver (`--web_driver phantomjs`), you need to:
+use one webdriver, you don't need the others installed. The custom
+paths for the webdrivers in your system should be put in the config
+file `.generate_har_file.conf` since the program does a basic
+verification that they are valid. This config file can be located
+either in the current directory (checked first) or in the base
+`$HOME` directory.
+
+If you want to use the `PhantomJS` webdriver (`--web_driver phantomjs`),
+you need to:
 
      Install NodeJS
 
      Install PhantomJS, like by the NodeJS package manager
 
            npm -g install phantomjs
-
-     Replace in the script the tag '<PUT-HERE-PATH-TO>' where
-     the 'phantomjs' binary is installed.
 
 For the `Mozilla Firefox` webdriver (option `--web_driver firefox`),
 you need to have `Firefox` installed.
@@ -160,15 +164,22 @@ you need to have it installed and:
 
           http://central.maven.org/maven2/org/seleniumhq/selenium/selenium-safari-driver/
 
-# Known issues
+# Other schemas to obtain performance profiling data
 
-This Python script can run under several environments and calls other programs
-and libraries (different Selenium webdrivers, BrowserMob Proxy), so it is difficult
-for it to find where those programs are located (or the proper version you want to
-use of these programs). The script has tags '<PUT-HERE-PATH-TO>' that should be
-replaced with the path in your system where to find the `webdriver` you want to use
-(and you need only to replace '<PUT-HERE-PATH-TO>' for the webdrivers you want to
-use).
+The `World Wide Web Consortium (W3C)` has developed other schemas to obtain performance
+profiling data of web browsing, in which the browsers may offer this information as an
+`API` interface available from bein called inside the webpage (and not as an archive format
+or report, as the `HAR` HTML archive is):
+
+       http://www.w3.org/TR/navigation-timing/
+
+       http://www.w3.org/TR/performance-timeline/
+
+       http://www.w3.org/TR/resource-timing/
+
+       http://www.w3.org/TR/user-timing/
+
+# Known issues
 
 The Selenium webdriver for Safari seems to have issues setting the proxy
 (the BrowserMob Proxy), so, while the script is able to load the URL in Safari,
