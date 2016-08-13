@@ -95,6 +95,10 @@ report in the generated `.prof` file.)
 The Python module for the `Selenium Web Browser` automation, like,
 e.g., by:
 
+    pip  install  selenium
+
+Or with Anaconda distribution of Python:
+
     conda install --channel https://conda.anaconda.org/chen selenium
 
 The `BrowserMob Proxy` is also necessary, since it caches all the
@@ -102,7 +106,20 @@ HAR information about the webpage:
 
     http://bmp.lightbody.net/
 
-and the Python module for the `BrowserMob Proxy`:
+(Note: `unzip` does not always extracts the `browsermob-proxy`
+executable with the right executable permissions, so you may
+need to adjust them after unzipping:
+
+    chmod a+x <PATH-TO>/bin/browsermob-proxy
+
+You may need to have the Java Runtime installed in order to run
+`browsermob-proxy`. Please check the `server.log` file for any
+issues regarding `browsermob-proxy`, which may have lines like:
+
+    Error: JAVA_HOME is not defined correctly.
+)
+
+You also need the Python module for the `BrowserMob Proxy`:
 
      pip install browsermob-proxy
 
@@ -124,6 +141,14 @@ you need to:
      Install PhantomJS, like by the NodeJS package manager
 
            npm -g install phantomjs
+
+(Note: Debian and Ubuntu users may have issues while installing the
+`phantomjs` package, because its installer expects the `node`
+interpreter, but in Debian the interpreter is called `nodejs`, while
+`node` (`/usr/sbin/node`) is a different program. There are several
+ways around, including a `node` symlink to `/usr/bin/nodejs` in a
+directory in the `PATH` environment variable **before** `/usr/sbin`.
+(Read `/usr/share/doc/nodejs/README.Debian` for more details.))
 
 For the `Mozilla Firefox` webdriver (option `--web_driver firefox`),
 you need to have `Firefox` installed.

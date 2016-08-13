@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 
 """Generate HAR archives from a set of URLs and report the different
 performance timings (profiling) of each object requested for rendering
